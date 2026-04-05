@@ -1,0 +1,72 @@
+# OpenEnv Environment Metadata
+name: clinical-trial-ae-triage
+version: "1.0.0"
+description: >
+  An RL environment simulating pharmacovigilance adverse event triage.
+  Agents receive real-world-style adverse event reports and must
+  classify seriousness, assess causality, check expectedness
+  (SUSAR detection), perform MedDRA coding, and route to regulators.
+  Features asymmetric safety-first reward shaping where missing a
+  SUSAR is penalized far more heavily than a false alarm.
+
+author: "PharmacoVigilance AI Team"
+tags:
+  - openenv
+  - pharmacovigilance
+  - healthcare
+  - clinical-trials
+  - drug-safety
+  - NLP
+  - reinforcement-learning
+
+# API endpoints
+endpoints:
+  reset: /reset
+  step: /step
+  state: /state
+
+# Typed models
+models:
+  action: env.models.Action
+  observation: env.models.Observation
+  state: env.models.State
+
+# Task definitions
+tasks:
+  - id: task_seriousness
+    name: "Seriousness Classification"
+    difficulty: easy
+    description: >
+      Classify adverse event reports as serious or non-serious
+      based on ICH E2A criteria.
+    grader: env.tasks.grade_seriousness
+    max_steps: 2
+
+  - id: task_susar
+    name: "SUSAR Detection"
+    difficulty: medium
+    description: >
+      Assess seriousness, causality, and expectedness to determine
+      if a case qualifies as a Suspected Unexpected Serious Adverse
+      Reaction (SUSAR). Partial credit for each criterion.
+    grader: env.tasks.grade_susar
+    max_steps: 3
+
+  - id: task_full_triage
+    name: "Complete AE Triage & Routing"
+    difficulty: hard
+    description: >
+      Full pharmacovigilance triage: SUSAR determination, MedDRA
+      coding, regulatory routing, expedited reporting decision,
+      and ICSR narrative generation. Scored across 5 sub-components.
+    grader: env.tasks.grade_full_triage
+    max_steps: 5
+
+# Reward design
+reward:
+  type: asymmetric_safety_first
+  description: >
+    Novel reward shaping: missed SUSAR penalty (-0.5) is 10x the
+    false alarm penalty (-0.05). Encodes the pharmacovigilance
+    principle that patient safety takes absolute priority.
+  range: [-1.0, 2.0]

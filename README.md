@@ -466,17 +466,20 @@ Reporters: Physicians, nurses, patients, consumers/caregivers
 
 Sources: Clinical trial sites, patient apps, email, call centers, web forms, urgent phone reports
 
+Live Deployment
+HuggingFace Space: https://huggingface.co/spaces/cb2324/clinical-trial-ae-triage
+Live API: https://cb2324-clinical-trial-ae-triage.hf.space
+Test endpoints:
+Health: https://cb2324-clinical-trial-ae-triage.hf.space/health
+Tasks: https://cb2324-clinical-trial-ae-triage.hf.space/tasks
 Validation
-
-\# Run openenv validation
-
+bash
+# Run openenv validation
 openenv validate
 
-
-
-\# Run pre-submission validator
-
+# Run pre-submission validator
 ./validate.sh https://cb2324-clinical-trial-ae-triage.hf.space .
+
 
 
 

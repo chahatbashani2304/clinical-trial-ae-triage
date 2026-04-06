@@ -1,157 +1,243 @@
+title: Clinical Trial AE Triage emoji: 🏥 colorFrom: blue colorTo: red sdk: docker app_port: 7860 tags:
+openenv
+
 Clinical Trial AE Triage — OpenEnv Environment
-An OpenEnv-compliant RL environment simulating real-world pharmacovigilance adverse event (AE) triage and SUSAR detection.
-Motivation
-Pharmacovigilance professionals at pharmaceutical companies process thousands of adverse event reports daily. Each report must be triaged for seriousness, causality, expectedness, coded to MedDRA terminology, and routed to the appropriate regulatory authority — all under strict 7/15-day deadlines. This environment enables AI agents to learn this critical healthcare task.
-What Makes This Novel
-Asymmetric safety-first reward shaping: Missing a SUSAR gets 10× the penalty of a false alarm
-Three-criteria SUSAR detection: Seriousness + Causality + Expectedness (no published RL environment does this)
-MedDRA coding evaluation: Agents must map free-text to standardized medical terms
-Regulatory routing: Multi-target decision (FDA/EMA/PMDA/MHRA)
-Real pharmacovigilance domain: Not a game or toy — fills a genuine gap in OpenEnv
+Environment Description and Motivation
+Pharmacovigilance (PV) is the science of detecting, assessing, and preventing adverse effects of medicines. Every pharmaceutical company employs teams of PV professionals who manually process thousands of adverse event (AE) reports daily. Each report must be triaged for seriousness, assessed for causality, checked for expectedness against the drug's known safety profile, coded to MedDRA (Medical Dictionary for Regulatory Activities) terminology, and routed to the appropriate regulatory authority (FDA, EMA, PMDA, MHRA) — all under strict 7-day or 15-day reporting deadlines.
+This OpenEnv environment simulates the real-world task of clinical trial adverse event triage and SUSAR (Suspected Unexpected Serious Adverse Reaction) detection. An AI agent receives realistic adverse event report narratives and must make the same decisions a pharmacovigilance professional would make. The environment scores the agent's performance using deterministic graders with partial credit, and provides shaped rewards that encode the critical principle of patient safety: missing a real SUSAR is penalized far more heavily than raising a false alarm.
+This environment fills a genuine gap in the OpenEnv ecosystem — no existing environment covers the pharmacovigilance domain, and the asymmetric safety-first reward design introduces novel properties for RL research.
 Action Space
+The agent submits a structured JSON action with the following fields. Not all fields are required for every task — easier tasks use fewer fields.
 Field
 Type
-Task
+Used In
 Description
 seriousness
-serious / non_serious
-1,2,3
-ICH E2A seriousness classification
+"serious" or "non_serious"
+Task 1, 2, 3
+ICH E2A seriousness classification based on criteria: death, life-threatening, hospitalization, disability, congenital anomaly, or medically significant
 seriousness_reason
 string
-1,2,3
-Reason (death, hospitalization, etc.)
+Task 1, 2, 3
+Brief explanation of why the event is serious or non-serious
 causality
-related / possibly_related / unlikely / unrelated
-2,3
-Causal relationship assessment
+"related", "possibly_related", "unlikely", or "unrelated"
+Task 2, 3
+Assessment of causal relationship between the drug and the adverse event
 expectedness
-expected / unexpected
-2,3
-Based on Reference Safety Information
+"expected" or "unexpected"
+Task 2, 3
+Whether the reaction is listed in the drug's Reference Safety Information (known side effects)
 triage_decision
-SUSAR / NOT_SUSAR / NEEDS_REVIEW
-2,3
-Final SUSAR determination
+"SUSAR", "NOT_SUSAR", or "NEEDS_REVIEW"
+Task 2, 3
+Final SUSAR determination: serious + related + unexpected = SUSAR
 meddra_codings
-List[{raw_term, preferred_term, soc}]
-3
-MedDRA Preferred Term coding
+list of {raw_term, preferred_term, soc}
+Task 3
+MedDRA Preferred Term coding for each adverse event mentioned
 regulatory_route
-FDA / EMA / PMDA / MHRA / NONE
-3
-Regulatory authority routing
+"FDA", "EMA", "PMDA", "MHRA", or "NONE"
+Task 3
+Which regulatory authority should receive the report
 expedited_report
 boolean
-3
-Whether expedited reporting needed
+Task 3
+Whether expedited reporting (7-day or 15-day) is required
 narrative_summary
 string
-3
-Brief ICSR narrative
+Task 3
+Brief 2-3 sentence ICSR (Individual Case Safety Report) narrative
+
+Example action for Task 2:
+{
+  "seriousness": "serious",
+  "seriousness_reason": "hospitalization",
+  "causality": "related",
+  "expectedness": "unexpected",
+  "triage_decision": "SUSAR"
+}
 
 Observation Space
+The environment returns the following observation after reset() and step():
 Field
 Type
 Description
-ae_report.narrative
-string
-Free-text adverse event report
-ae_report.drug_name
-string
-Suspect drug name
-ae_report.known_side_effects
-List[string]
-Drug's known side effects (RSI)
-ae_report.reporter_type
-string
-HCP, Patient, or Consumer
 done
 boolean
-Episode finished?
+Whether the episode is finished
 reward
 float
-Reward from last action
+Reward from the last action (null on reset)
+task_id
+string
+Current task: task_seriousness, task_susar, or task_full_triage
+ae_report.report_id
+string
+Unique case identifier (e.g., "AE-2025-001")
+ae_report.narrative
+string
+Free-text adverse event report narrative written by reporters (HCPs, patients, consumers)
+ae_report.drug_name
+string
+Name of the suspect drug
+ae_report.known_side_effects
+list of strings
+Drug's known side effects from Reference Safety Information — used to determine expectedness
+ae_report.reporter_type
+string
+Who reported: "HCP", "Patient", or "Consumer"
+ae_report.report_source
+string
+Source channel: "clinical_trial_site", "email", "patient_app", "call_center", "web_form", "phone_urgent"
+step_count
+int
+Current step number in the episode
+max_steps
+int
+Maximum steps allowed for the current task
 feedback
 string
-Partial progress feedback
+Partial progress feedback indicating which fields are correct/incorrect
 score
 float
-Grader score 0.0–1.0
+Current grader score from 0.0 to 1.0
 
-Tasks
-Task
-Difficulty
-Description
-Scoring
-task_seriousness
-Easy
-Classify serious vs non-serious
-0.9 for correct + 0.1 reason bonus
-task_susar
-Medium
-Full SUSAR 3-criteria assessment
-0.25 per criterion (partial credit)
-task_full_triage
-Hard
-SUSAR + MedDRA + routing + narrative
-Weighted across 5 sub-tasks
-
+Task Descriptions with Expected Difficulty
+Task 1: Seriousness Classification (Easy)
+ID: task_seriousness | Max Steps: 2
+The agent reads an adverse event report and classifies it as "serious" or "non_serious" based on ICH E2A seriousness criteria. This is the foundational pharmacovigilance skill — determining whether an event resulted in death, was life-threatening, required hospitalization, caused disability, was a congenital anomaly, or was otherwise medically significant.
+Scoring: 0.9 points for correct classification + 0.1 bonus for providing a valid reason. Expected baseline score: ~1.0 (straightforward for capable LLMs).
+Task 2: SUSAR Detection (Medium)
+ID: task_susar | Max Steps: 3
+The agent must assess all three SUSAR criteria: (1) Is the event serious? (2) Is there a suspected causal relationship with the drug? (3) Is the reaction unexpected based on the drug's known side effects? If all three criteria are met, the case is a SUSAR. Partial credit is awarded: 0.25 points for each correct criterion plus 0.25 for the correct final SUSAR decision.
+Scoring: Weighted across 4 sub-components (seriousness, causality, expectedness, SUSAR decision) with partial credit. Missed SUSARs receive an additional -0.1 penalty. Expected baseline score: ~0.95.
+Task 3: Complete AE Triage and Routing (Hard)
+ID: task_full_triage | Max Steps: 5
+The agent performs the full pharmacovigilance workflow: SUSAR determination (30%), MedDRA coding of adverse event terms to Preferred Terms (20%), regulatory routing to the correct authority (15%), expedited reporting decision (15%), and ICSR narrative generation (20%). This requires medical knowledge, regulatory awareness, and the ability to produce structured clinical documentation.
+Scoring: Weighted composite across 5 sub-tasks. MedDRA coding uses F1 score against ground truth terms. Narrative quality is assessed for length and mention of key clinical elements. Expected baseline score: ~0.62-0.84 depending on model capability.
 Reward Design
-Asymmetric Safety-First Shaping (Novel):
+The environment uses a novel asymmetric safety-first reward function that encodes the pharmacovigilance principle that patient safety always comes first:
 Scenario
 Reward Modifier
-Correct SUSAR identification
+Rationale
+Correctly identified SUSAR
 +0.3 bonus
-Missed SUSAR (false negative)
+Catching real safety signals is critical
+Missed a real SUSAR (false negative)
 -0.5 penalty
+Missing a safety signal can endanger patients
 False alarm (false positive)
 -0.05 penalty
-Correct non-SUSAR
+Minor cost — better safe than sorry
+Correctly identified non-SUSAR
 +0.1 bonus
-Step penalty (efficiency)
+Routine correct classification
+Step penalty
 -0.02 per step
+Encourages efficient triage
 
-Setup & Usage
+The missed-SUSAR penalty is 10x the false alarm penalty, reflecting real-world consequences where failing to report a serious unexpected reaction can lead to patient harm, regulatory sanctions, and trial suspension.
+Setup and Usage Instructions
+Prerequisites
+Python 3.10+
+Docker (for containerized deployment)
+An LLM API key (OpenAI, Groq, HuggingFace, or Gemini)
 Local Development
+# Install dependencies
 pip install -r requirements.txt
+
 # Start the environment server
 python -m env.server
+# Server runs at http://localhost:7860
+
 # In another terminal, run the baseline agent
-OPENAI_API_KEY=sk-xxx python inference.py
+# Set your API credentials first:
+export API_BASE_URL=https://api.groq.com/openai/v1
+export MODEL_NAME=llama-3.3-70b-versatile
+export HF_TOKEN=gsk_your_key_here
+
+python inference.py
 
 Docker
-docker build -t ae-triage-env .
-docker run -p 7860:7860 ae-triage-env
+docker build -t ae-triage .
+docker run -p 7860:7860 ae-triage
+
+API Endpoints
+Endpoint
+Method
+Description
+/health
+GET
+Health check — returns 200 if running
+/reset
+POST
+Start new episode — accepts {task_id, case_index}
+/step
+POST
+Submit action — accepts {action: {...}}, returns observation + reward
+/state
+GET
+Returns current internal state
+/tasks
+GET
+Lists all available tasks with descriptions
 
 Environment Variables
-API_BASE_URL=https://api.openai.com/v1
-MODEL_NAME=gpt-4
-OPENAI_API_KEY=sk-xxx
-HF_TOKEN=hf_xxx
-ENV_URL=http://localhost:7860
+Variable
+Required
+Description
+API_BASE_URL
+Yes (has default)
+LLM API endpoint
+MODEL_NAME
+Yes (has default)
+Model identifier for inference
+HF_TOKEN
+Yes (no default)
+API key for LLM calls
+ENV_URL
+No
+Environment server URL (default: http://localhost:7860)
 
-Baseline Scores (GPT-4)
+Baseline Scores (Llama 3.3 70B via Groq)
 Task
+Difficulty
 Avg Score
 Avg Reward
 task_seriousness
-~0.85
-~0.83
+Easy
+1.000
+0.980
 task_susar
-~0.72
-~0.80
+Medium
+0.956
+1.147
 task_full_triage
-~0.55
-~0.48
+Hard
+0.842
+1.033
 Overall
-~0.71
-~0.70
 
+
+0.933
+1.053
+
+Scores demonstrate clear difficulty progression from easy to hard. The hard task genuinely challenges frontier models, with per-case scores ranging from 0.57 to 0.95. The asymmetric reward design means reward values differ from raw scores — correct SUSAR identifications receive bonus rewards above the base grader score.
 Case Bank
-9 realistic AE cases covering:
-SUSAR cases: liver failure, cardiac arrest, anaphylaxis, SJS, kidney failure
-Non-SUSAR cases: mild headache, expected nausea, known rash, mild fatigue
-Multiple drugs: DrugX, Pembrolizumab, Metformin, Remdesivir, Ibuprofen
-Various reporters: HCP, Patient, Consumer, Nurse
-Multiple sources: clinical trial site, patient app, email, call center
+9 realistic adverse event cases covering:
+SUSAR cases (5): Liver failure, cardiac arrest, anaphylactic shock, acute kidney failure, Stevens-Johnson Syndrome
+Non-SUSAR cases (4): Mild headache, expected nausea/dizziness, known skin rash, mild fatigue/fever
+Drugs: DrugX (fictional), Pembrolizumab, Metformin, Remdesivir, Ibuprofen
+Reporters: Physicians, nurses, patients, consumers/caregivers
+Sources: Clinical trial sites, patient apps, email, call centers, web forms, urgent phone reports
+Validation
+# Run openenv validation
+openenv validate
+
+# Run pre-submission validator
+./validate.sh https://cb2324-clinical-trial-ae-triage.hf.space .
+
+
+
+

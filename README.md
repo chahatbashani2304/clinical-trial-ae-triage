@@ -476,7 +476,7 @@ openenv validate
 
 \# Run pre-submission validator
 
-./validate.sh https://YOUR\_USERNAME-clinical-trial-ae-triage.hf.space .
+./validate.sh https://cb2324-clinical-trial-ae-triage.hf.space .
 
 
 

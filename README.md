@@ -23,86 +23,17 @@ Action Space
 
 The agent submits a structured JSON action with the following fields. Not all fields are required for every task — easier tasks use fewer fields.
 
-Field
-
-Type
-
-Used In
-
-Description
-
-seriousness
-
-"serious" or "non\_serious"
-
-Task 1, 2, 3
-
-ICH E2A seriousness classification based on criteria: death, life-threatening, hospitalization, disability, congenital anomaly, or medically significant
-
-seriousness\_reason
-
-string
-
-Task 1, 2, 3
-
-Brief explanation of why the event is serious or non-serious
-
-causality
-
-"related", "possibly\_related", "unlikely", or "unrelated"
-
-Task 2, 3
-
-Assessment of causal relationship between the drug and the adverse event
-
-expectedness
-
-"expected" or "unexpected"
-
-Task 2, 3
-
-Whether the reaction is listed in the drug's Reference Safety Information (known side effects)
-
-triage\_decision
-
-"SUSAR", "NOT\_SUSAR", or "NEEDS\_REVIEW"
-
-Task 2, 3
-
-Final SUSAR determination: serious + related + unexpected = SUSAR
-
-meddra\_codings
-
-list of {raw\_term, preferred\_term, soc}
-
-Task 3
-
-MedDRA Preferred Term coding for each adverse event mentioned
-
-regulatory\_route
-
-"FDA", "EMA", "PMDA", "MHRA", or "NONE"
-
-Task 3
-
-Which regulatory authority should receive the report
-
-expedited\_report
-
-boolean
-
-Task 3
-
-Whether expedited reporting (7-day or 15-day) is required
-
-narrative\_summary
-
-string
-
-Task 3
-
-Brief 2-3 sentence ICSR (Individual Case Safety Report) narrative
-
+| Field               | Type                                              | Used In       | Description |
+|--------------------|--------------------------------------------------|--------------|-------------|
+| seriousness        | "serious" or "non_serious"                       | Task 1, 2, 3 | ICH E2A seriousness classification based on criteria: death, life-threatening, hospitalization, disability, congenital anomaly, or medically significant |
+| seriousness_reason | string                                           | Task 1, 2, 3 | Brief explanation of why the event is serious or non-serious |
+| causality          | "related", "possibly_related", "unlikely", or "unrelated" | Task 2, 3    | Assessment of causal relationship between the drug and the adverse event |
+| expectedness       | "expected" or "unexpected"                       | Task 2, 3    | Whether the reaction is listed in the drug's Reference Safety Information (known side effects) |
+| triage_decision    | "SUSAR", "NOT_SUSAR", or "NEEDS_REVIEW"          | Task 2, 3    | Final SUSAR determination: serious + related + unexpected = SUSAR |
+| meddra_codings     | list of {raw_term, preferred_term, soc}          | Task 3       | MedDRA Preferred Term coding for each adverse event mentioned |
+| regulatory_route   | "FDA", "EMA", "PMDA", "MHRA", or "NONE"          | Task 3       | Which regulatory authority should receive the report |
+| expedited_report   | boolean                                          | Task 3       | Whether expedited reporting (7-day or 15-day) is required |
+| narrative_summary  | string                                           | Task 3       | Brief 2-3 sentence ICSR (Individual Case Safety Report) narrative |
 
 
 Example action for Task 2:
@@ -125,91 +56,23 @@ Example action for Task 2:
 
 Observation Space
 
-The environment returns the following observation after reset() and step():
+The environment returns the following observation after `reset()` and `step()`:
 
-Field
-
-Type
-
-Description
-
-done
-
-boolean
-
-Whether the episode is finished
-
-reward
-
-float
-
-Reward from the last action (null on reset)
-
-task\_id
-
-string
-
-Current task: task\_seriousness, task\_susar, or task\_full\_triage
-
-ae\_report.report\_id
-
-string
-
-Unique case identifier (e.g., "AE-2025-001")
-
-ae\_report.narrative
-
-string
-
-Free-text adverse event report narrative written by reporters (HCPs, patients, consumers)
-
-ae\_report.drug\_name
-
-string
-
-Name of the suspect drug
-
-ae\_report.known\_side\_effects
-
-list of strings
-
-Drug's known side effects from Reference Safety Information — used to determine expectedness
-
-ae\_report.reporter\_type
-
-string
-
-Who reported: "HCP", "Patient", or "Consumer"
-
-ae\_report.report\_source
-
-string
-
-Source channel: "clinical\_trial\_site", "email", "patient\_app", "call\_center", "web\_form", "phone\_urgent"
-
-step\_count
-
-int
-
-Current step number in the episode
-
-max\_steps
-
-int
-
-Maximum steps allowed for the current task
-
-feedback
-
-string
-
-Partial progress feedback indicating which fields are correct/incorrect
-
-score
-
-float
-
-Current grader score from 0.0 to 1.0
+| Field                        | Type            | Description |
+|-----------------------------|-----------------|-------------|
+| done                        | boolean         | Whether the episode is finished |
+| reward                      | float           | Reward from the last action (null on reset) |
+| task_id                     | string          | Current task: task_seriousness, task_susar, or task_full_triage |
+| ae_report.report_id         | string          | Unique case identifier (e.g., "AE-2025-001") |
+| ae_report.narrative         | string          | Free-text adverse event report narrative written by reporters (HCPs, patients, consumers) |
+| ae_report.drug_name         | string          | Name of the suspect drug |
+| ae_report.known_side_effects| list of strings | Drug's known side effects from Reference Safety Information — used to determine expectedness |
+| ae_report.reporter_type     | string          | Who reported: "HCP", "Patient", or "Consumer" |
+| ae_report.report_source     | string          | Source channel: "clinical_trial_site", "email", "patient_app", "call_center", "web_form", "phone_urgent" |
+| step_count                  | int             | Current step number in the episode |
+| max_steps                   | int             | Maximum steps allowed for the current task |
+| feedback                    | string          | Partial progress feedback indicating which fields are correct/incorrect |
+| score                       | float           | Current grader score from 0.0 to 1.0 |
 
 
 
@@ -241,43 +104,15 @@ Scoring: Weighted composite across 5 sub-tasks. MedDRA coding uses F1 score agai
 
 Reward Design
 
-The environment uses a novel asymmetric safety-first reward function that encodes the pharmacovigilance principle that patient safety always comes first:
+The environment uses a novel asymmetric safety-first reward function that prioritizes patient safety.
 
-Scenario
-
-Reward Modifier
-
-Rationale
-
-Correctly identified SUSAR
-
-+0.3 bonus
-
-Catching real safety signals is critical
-
-Missed a real SUSAR (false negative)
-
-\-0.5 penalty
-
-Missing a safety signal can endanger patients
-
-False alarm (false positive)
-
-\-0.05 penalty
-
-Minor cost — better safe than sorry
-
-Correctly identified non-SUSAR
-
-+0.1 bonus
-
-Routine correct classification
-
-Step penalty
-
-\-0.02 per step
-
-Encourages efficient triage
+| Scenario                                   | Reward Modifier | Rationale                                      |
+|-------------------------------------------|-----------------|-----------------------------------------------|
+| Correctly identified SUSAR                | +0.3 bonus      | Catching real safety signals is critical       |
+| Missed a real SUSAR (false negative)      | -0.5 penalty    | Missing a safety signal can endanger patients  |
+| False alarm (false positive)              | -0.05 penalty   | Minor cost — better safe than sorry            |
+| Correctly identified non-SUSAR            | +0.1 bonus      | Routine correct classification                 |
+| Step penalty                             | -0.02 per step  | Encourages efficient triage                    |
 
 
 
@@ -335,121 +170,34 @@ docker run -p 7860:7860 ae-triage
 
 API Endpoints
 
-Endpoint
-
-Method
-
-Description
-
-/health
-
-GET
-
-Health check — returns 200 if running
-
-/reset
-
-POST
-
-Start new episode — accepts {task\_id, case\_index}
-
-/step
-
-POST
-
-Submit action — accepts {action: {...}}, returns observation + reward
-
-/state
-
-GET
-
-Returns current internal state
-
-/tasks
-
-GET
-
-Lists all available tasks with descriptions
+| Endpoint | Method | Description |
+|----------|--------|------------|
+| /health  | GET    | Health check — returns 200 if running |
+| /reset   | POST   | Start new episode — accepts `{task_id, case_index}` |
+| /step    | POST   | Submit action — accepts `{action: {...}}`, returns observation + reward |
+| /state   | GET    | Returns current internal state |
+| /tasks   | GET    | Lists all available tasks with descriptions |
 
 
 
 Environment Variables
 
-Variable
-
-Required
-
-Description
-
-API\_BASE\_URL
-
-Yes (has default)
-
-LLM API endpoint
-
-MODEL\_NAME
-
-Yes (has default)
-
-Model identifier for inference
-
-HF\_TOKEN
-
-Yes (no default)
-
-API key for LLM calls
-
-ENV\_URL
-
-No
-
-Environment server URL (default: http://localhost:7860)
+| Variable       | Required            | Description                                      |
+|---------------|---------------------|--------------------------------------------------|
+| API_BASE_URL  | Yes (has default)   | LLM API endpoint                                 |
+| MODEL_NAME    | Yes (has default)   | Model identifier for inference                   |
+| HF_TOKEN      | Yes (no default)    | API key for LLM calls                            |
+| ENV_URL       | No                  | Environment server URL (default: http://localhost:7860) |
 
 
 
 Baseline Scores (Llama 3.3 70B via Groq)
-
-Task
-
-Difficulty
-
-Avg Score
-
-Avg Reward
-
-task\_seriousness
-
-Easy
-
-1.000
-
-0.980
-
-task\_susar
-
-Medium
-
-0.956
-
-1.147
-
-task\_full\_triage
-
-Hard
-
-0.842
-
-1.033
-
-Overall
-
-
-
-
-
-0.933
-
-1.053
+| Task               | Difficulty | Avg Score | Avg Reward |
+|------------------|-----------|-----------|------------|
+| task_seriousness | Easy      | 1.000     | 0.980      |
+| task_susar       | Medium    | 0.956     | 1.147      |
+| task_full_triage | Hard      | 0.842     | 1.033      |
+| **Overall**      | —         | **0.933** | **1.053**  |
 
 
 

@@ -1,8 +1,11 @@
 \- - - 
 
-title: Clinical Trial AE Triage emoji: 🏥 colorFrom: blue colorTo: red sdk: docker app\_port: 7860 tags:
-
-openenv
+title: Clinical Trial AE Triage
+emoji: 🐳
+colorFrom: purple
+colorTo: gray
+sdk: docker
+app_port: 7860
 
 \- - -
 

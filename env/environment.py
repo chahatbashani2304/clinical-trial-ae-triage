@@ -148,13 +148,9 @@ class AETriageEnvironment:
         )
 
     def state(self) -> State:
-        """Return current internal state."""
+        """Return current environment state."""
         if self._state is None:
-            return State(
-                episode_id="none",
-                task_id=TaskID.SERIOUSNESS,
-                is_done=True,
-            )
+            return State()
         return self._state
 
     def _compute_reward(self, action: Action, truth: Dict,
@@ -255,3 +251,24 @@ class AETriageEnvironment:
             "scores": self._episode_scores,
             "final_score": self._episode_scores[-1] if self._episode_scores else 0.0,
         }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

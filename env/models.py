@@ -1,4 +1,3 @@
-
 """
 Pydantic models for Clinical Trial AE Triage OpenEnv.
 Defines Action, Observation, and State types per OpenEnv spec.
@@ -136,8 +135,8 @@ class Action(BaseModel):
 
 class State(BaseModel):
     """Internal state returned by state()."""
-    episode_id: str = Field(description="Current episode identifier")
-    task_id: TaskID = Field(description="Active task")
+    episode_id: str = Field(default="none", description="Current episode identifier")
+    task_id: TaskID = Field(default=TaskID.SERIOUSNESS, description="Active task")
     step_count: int = Field(default=0)
     case_index: int = Field(default=0, description="Which case in the bank")
     ground_truth: Optional[Dict] = Field(
@@ -146,3 +145,23 @@ class State(BaseModel):
     )
     cumulative_reward: float = Field(default=0.0)
     is_done: bool = Field(default=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

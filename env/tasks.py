@@ -1,4 +1,3 @@
-
 """
 Task definitions with case banks and graders for AE Triage OpenEnv.
 3 tasks: Easy (Seriousness) → Medium (SUSAR) → Hard (Full Triage)
@@ -333,110 +332,107 @@ def grade_seriousness(action: Action, truth: Dict) -> float:
     """Task 1 grader: Seriousness classification only."""
     if action.seriousness is None:
         return 0.0
-    correct = action.seriousness.value == truth["seriousness"]
-    # Partial credit for providing a reason
-    reason_bonus = 0.0
-    if action.seriousness_reason and len(action.seriousness_reason) > 5:
-        reason_bonus = 0.1
-    return min(1.0, (0.9 if correct else 0.0) + reason_bonus)
+    try:
+        correct = action.seriousness.value == truth.get("seriousness", "")
+        reason_bonus = 0.0
+        if action.seriousness_reason and len(action.seriousness_reason) > 5:
+            reason_bonus = 0.1
+        return min(1.0, (0.9 if correct else 0.0) + reason_bonus)
+    except Exception:
+        return 0.0
 
 
 def grade_susar(action: Action, truth: Dict) -> float:
     """Task 2 grader: Full SUSAR criteria with partial credit."""
-    score = 0.0
-    total_weight = 0.0
+    try:
+        score = 0.0
 
-    # Seriousness (weight 0.25)
-    if action.seriousness is not None:
-        if action.seriousness.value == truth["seriousness"]:
-            score += 0.25
-    total_weight += 0.25
+        # Seriousness (weight 0.25)
+        if action.seriousness is not None:
+            if action.seriousness.value == truth.get("seriousness", ""):
+                score += 0.25
 
-    # Causality (weight 0.25)
-    if action.causality is not None:
-        truth_causal = truth["causality"]
-        pred_causal = action.causality.value
-        # Exact match
-        if pred_causal == truth_causal:
-            score += 0.25
-        # Partial: related/possibly_related both count as "suspected"
-        elif pred_causal in ("related", "possibly_related") and truth_causal in ("related", "possibly_related"):
-            score += 0.15
-    total_weight += 0.25
+        # Causality (weight 0.25)
+        if action.causality is not None:
+            truth_causal = truth.get("causality", "")
+            pred_causal = action.causality.value
+            if pred_causal == truth_causal:
+                score += 0.25
+            elif pred_causal in ("related", "possibly_related") and truth_causal in ("related", "possibly_related"):
+                score += 0.15
 
-    # Expectedness (weight 0.25)
-    if action.expectedness is not None:
-        if action.expectedness.value == truth["expectedness"]:
-            score += 0.25
-    total_weight += 0.25
+        # Expectedness (weight 0.25)
+        if action.expectedness is not None:
+            if action.expectedness.value == truth.get("expectedness", ""):
+                score += 0.25
 
-    # Final SUSAR decision (weight 0.25)
-    if action.triage_decision is not None:
-        truth_susar = truth["is_susar"]
-        pred_susar = action.triage_decision.value == "SUSAR"
-        if pred_susar == truth_susar:
-            score += 0.25
-        # CRITICAL: Penalize missed SUSARs more
-        elif truth_susar and not pred_susar:
-            score -= 0.1  # Penalty for missing a real SUSAR
-    total_weight += 0.25
+        # Final SUSAR decision (weight 0.25)
+        if action.triage_decision is not None:
+            truth_susar = truth.get("is_susar", False)
+            pred_susar = action.triage_decision.value == "SUSAR"
+            if pred_susar == truth_susar:
+                score += 0.25
+            elif truth_susar and not pred_susar:
+                score -= 0.1
 
-    return max(0.0, min(1.0, score))
+        return max(0.0, min(1.0, score))
+    except Exception:
+        return 0.0
 
 
 def grade_full_triage(action: Action, truth: Dict) -> float:
     """Task 3 grader: Complete triage with 5 sub-components."""
-    score = 0.0
+    try:
+        score = 0.0
 
-    # 1. SUSAR determination (weight 0.30)
-    susar_score = grade_susar(action, truth)
-    score += 0.30 * susar_score
+        # 1. SUSAR determination (weight 0.30)
+        susar_score = grade_susar(action, truth)
+        score += 0.30 * susar_score
 
-    # 2. MedDRA coding (weight 0.20)
-    if action.meddra_codings and len(action.meddra_codings) > 0:
-        truth_pts = {t["pt"].lower() for t in truth["meddra_terms"]}
-        pred_pts = {c.preferred_term.lower() for c in action.meddra_codings}
-        if truth_pts and pred_pts:
-            intersection = truth_pts & pred_pts
-            precision = len(intersection) / len(pred_pts) if pred_pts else 0
-            recall = len(intersection) / len(truth_pts) if truth_pts else 0
-            f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
-            score += 0.20 * f1
-        # Partial credit for any reasonable coding attempt
-        elif len(action.meddra_codings) > 0:
-            score += 0.05
+        # 2. MedDRA coding (weight 0.20)
+        if action.meddra_codings and len(action.meddra_codings) > 0:
+            truth_terms = truth.get("meddra_terms", [])
+            truth_pts = {t["pt"].lower() for t in truth_terms if "pt" in t}
+            pred_pts = {c.preferred_term.lower() for c in action.meddra_codings if c.preferred_term}
+            if truth_pts and pred_pts:
+                intersection = truth_pts & pred_pts
+                precision = len(intersection) / len(pred_pts) if pred_pts else 0
+                recall = len(intersection) / len(truth_pts) if truth_pts else 0
+                f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
+                score += 0.20 * f1
+            elif len(action.meddra_codings) > 0:
+                score += 0.05
 
-    # 3. Regulatory routing (weight 0.15)
-    if action.regulatory_route is not None:
-        if action.regulatory_route.value == truth["regulatory_route"]:
-            score += 0.15
-        # Partial: any regulatory body for a SUSAR is partially correct
-        elif truth["is_susar"] and action.regulatory_route.value != "NONE":
-            score += 0.05
+        # 3. Regulatory routing (weight 0.15)
+        if action.regulatory_route is not None:
+            if action.regulatory_route.value == truth.get("regulatory_route", ""):
+                score += 0.15
+            elif truth.get("is_susar", False) and action.regulatory_route.value != "NONE":
+                score += 0.05
 
-    # 4. Expedited reporting (weight 0.15)
-    if action.expedited_report is not None:
-        if action.expedited_report == truth["expedited"]:
-            score += 0.15
-        # Missing expedited for a SUSAR is bad
-        elif truth["expedited"] and not action.expedited_report:
-            score -= 0.05
+        # 4. Expedited reporting (weight 0.15)
+        if action.expedited_report is not None:
+            if action.expedited_report == truth.get("expedited", False):
+                score += 0.15
+            elif truth.get("expedited", False) and not action.expedited_report:
+                score -= 0.05
 
-    # 5. Narrative summary (weight 0.20)
-    if action.narrative_summary and len(action.narrative_summary) > 20:
-        # Credit for providing a substantive narrative
-        narrative_score = min(1.0, len(action.narrative_summary) / 200)
-        # Check if it mentions key elements
-        narrative_lower = action.narrative_summary.lower()
-        key_elements = [
-            truth["meddra_terms"][0]["pt"].lower() if truth["meddra_terms"] else "",
-            truth["seriousness"],
-        ]
-        mention_count = sum(1 for k in key_elements if k and k in narrative_lower)
-        narrative_score = (narrative_score * 0.5) + (mention_count / max(len(key_elements), 1) * 0.5)
-        score += 0.20 * narrative_score
+        # 5. Narrative summary (weight 0.20)
+        if action.narrative_summary and len(action.narrative_summary) > 20:
+            narrative_score = min(1.0, len(action.narrative_summary) / 200)
+            narrative_lower = action.narrative_summary.lower()
+            truth_terms = truth.get("meddra_terms", [])
+            key_elements = []
+            if truth_terms and "pt" in truth_terms[0]:
+                key_elements.append(truth_terms[0]["pt"].lower())
+            key_elements.append(truth.get("seriousness", ""))
+            mention_count = sum(1 for k in key_elements if k and k in narrative_lower)
+            narrative_score = (narrative_score * 0.5) + (mention_count / max(len(key_elements), 1) * 0.5)
+            score += 0.20 * narrative_score
 
-    return max(0.0, min(1.0, score))
+        return max(0.0, min(1.0, score))
+    except Exception:
+        return 0.0
 
 
 # Map task IDs to graders
@@ -445,3 +441,28 @@ GRADERS = {
     TaskID.SUSAR_DETECTION: grade_susar,
     TaskID.FULL_TRIAGE: grade_full_triage,
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

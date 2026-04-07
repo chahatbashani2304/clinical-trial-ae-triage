@@ -7,7 +7,7 @@ from typing import Dict, Optional, Tuple
 from .models import (
     Action, Observation, State, AdverseEventReport, TaskID
 )
-from .tasks import CASE_BANK, TASKS, GRADERS
+from .tasks import CASE_BANK, TASKS, GRADERS, clamp_score
 
 
 class AETriageEnvironment:
@@ -111,7 +111,7 @@ class AETriageEnvironment:
 
         # Grade the action using task-specific grader
         grader = GRADERS[tid]
-        score = grader(action, truth)
+        score = clamp_score(grader(action, truth))
         self._episode_scores.append(score)
 
         # Compute shaped reward (not just the score)
@@ -251,24 +251,3 @@ class AETriageEnvironment:
             "scores": self._episode_scores,
             "final_score": self._episode_scores[-1] if self._episode_scores else 0.0,
         }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

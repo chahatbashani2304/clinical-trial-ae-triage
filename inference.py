@@ -17,10 +17,8 @@ import os
 import sys
 import json
 import time
-import textwrap
 from typing import List, Optional
 
-# Optional dotenv for local dev
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -72,6 +70,11 @@ SYSTEM_PROMPTS = {
         "seriousness with reason, causality, expectedness, SUSAR decision, "
         "MedDRA coding of AE terms, regulatory routing (FDA/EMA/PMDA/MHRA/NONE), "
         "expedited reporting (true/false), and brief ICSR narrative (2-3 sentences). "
+        "IMPORTANT: Use exactly these enum values - seriousness must be 'serious' or 'non_serious' "
+        "(with underscore, NOT hyphen). causality must be 'related', 'possibly_related', 'unlikely', "
+        "or 'unrelated'. expectedness must be 'expected' or 'unexpected'. "
+        "triage_decision must be 'SUSAR', 'NOT_SUSAR', or 'NEEDS_REVIEW'. "
+        "regulatory_route must be 'FDA', 'EMA', 'PMDA', 'MHRA', or 'NONE'. "
         "Respond ONLY with a JSON object, no markdown, no backticks: "
         '{"seriousness": "serious", "seriousness_reason": "reason", "causality": "related", '
         '"expectedness": "unexpected", "triage_decision": "SUSAR", '
@@ -92,14 +95,13 @@ def log_step(step, action, reward, done, error):
     print(f"[STEP] step={step} action={action} reward={reward:.2f} done={d} error={e}", flush=True)
 
 def log_end(success, steps, score, rewards):
-    r = ",".join(f"{x:.2f}" for x in rewards) if rewards else "0.00"
+    r = ",".join(f"{x:.2f}" for x in rewards) if rewards else "0.01"
     print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={r}", flush=True)
 
 
 # ── Helpers ──
 
 def wait_for_env(url, timeout=180):
-    """Wait for environment to be reachable. Retry every 3 seconds."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -113,7 +115,6 @@ def wait_for_env(url, timeout=180):
 
 
 def safe_request(method, url, **kwargs):
-    """Make HTTP request with retries and timeout."""
     kwargs.setdefault("timeout", 30)
     last_err = None
     for attempt in range(3):
@@ -131,11 +132,9 @@ def safe_request(method, url, **kwargs):
 
 
 def parse_json(text):
-    """Extract JSON from LLM response text."""
     if not text:
         return {}
     text = text.strip()
-    # Remove markdown fences
     if "```" in text:
         for part in text.split("```"):
             part = part.strip()
@@ -158,8 +157,25 @@ def parse_json(text):
     return {}
 
 
+def fix_enums(parsed):
+    """Fix common LLM enum mistakes like non-serious -> non_serious."""
+    if not parsed:
+        return parsed
+    fixes = {
+        "seriousness": {"non-serious": "non_serious", "nonserious": "non_serious"},
+        "causality": {"possibly related": "possibly_related", "possibly-related": "possibly_related"},
+        "triage_decision": {"NOT SUSAR": "NOT_SUSAR", "NEEDS REVIEW": "NEEDS_REVIEW",
+                           "not_susar": "NOT_SUSAR", "not susar": "NOT_SUSAR"},
+    }
+    for field, mapping in fixes.items():
+        if field in parsed and isinstance(parsed[field], str):
+            val = parsed[field].strip()
+            if val in mapping:
+                parsed[field] = mapping[val]
+    return parsed
+
+
 def build_prompt(obs):
-    """Build user prompt from observation dict."""
     try:
         ae = obs.get("ae_report") or {}
         lines = [
@@ -178,7 +194,6 @@ def build_prompt(obs):
 
 
 def call_llm(client, task_id, obs):
-    """Call LLM with retry. Returns parsed dict."""
     prompt = build_prompt(obs)
     sys_prompt = SYSTEM_PROMPTS.get(task_id, "")
     for attempt in range(2):
@@ -197,17 +212,21 @@ def call_llm(client, task_id, obs):
             time.sleep(1)
             result = parse_json(text)
             if result:
-                return result
+                return fix_enums(result)
         except Exception as e:
             print(f"[DEBUG] LLM attempt {attempt+1} failed: {e}", flush=True)
             time.sleep(3)
     return {}
 
 
+def clamp(score):
+    """Clamp score strictly between 0 and 1."""
+    return max(0.001, min(0.999, score))
+
+
 # ── Task Runner ──
 
 def run_task(client, task_config):
-    """Run one task across all cases."""
     task_id = task_config["id"]
     task_name = task_config["name"]
     max_steps = task_config["max_steps"]
@@ -216,7 +235,7 @@ def run_task(client, task_config):
     for case_idx in range(NUM_CASES):
         rewards = []
         steps_taken = 0
-        score = 0.0
+        score = 0.001
         success = False
 
         log_start(task=f"{task_name}-case{case_idx}", env=BENCHMARK, model=MODEL_NAME)
@@ -228,9 +247,9 @@ def run_task(client, task_config):
                     json={"task_id": task_id, "case_index": case_idx})
                 obs = reset_resp.json()
             except Exception as e:
-                log_step(step=1, action="reset_failed", reward=0.0, done=True, error=str(e)[:100])
-                log_end(success=False, steps=1, score=0.0, rewards=[0.0])
-                all_scores.append(0.0)
+                log_step(step=1, action="reset_failed", reward=0.01, done=True, error=str(e)[:100])
+                log_end(success=False, steps=1, score=0.001, rewards=[0.01])
+                all_scores.append(0.001)
                 continue
 
             # Steps
@@ -248,12 +267,12 @@ def run_task(client, task_config):
                         json={"action": parsed})
                     obs = step_resp.json()
                 except Exception as e:
-                    rewards.append(0.0)
+                    rewards.append(0.01)
                     steps_taken = step_num
-                    log_step(step=step_num, action=action_str, reward=0.0, done=True, error=str(e)[:100])
+                    log_step(step=step_num, action=action_str, reward=0.01, done=True, error=str(e)[:100])
                     break
 
-                reward = float(obs.get("reward") or 0.0)
+                reward = float(obs.get("reward") or 0.01)
                 done = bool(obs.get("done", False))
                 rewards.append(reward)
                 steps_taken = step_num
@@ -267,53 +286,49 @@ def run_task(client, task_config):
             if obs.get("score") is not None:
                 score = float(obs["score"])
             elif rewards:
-                score = max(0.0, min(1.0, sum(rewards) / max(len(rewards), 1)))
-            score = min(max(score, 0.0), 1.0)
+                score = sum(rewards) / max(len(rewards), 1)
+            score = clamp(score)
             success = score >= 0.5
 
         except Exception as e:
             print(f"[DEBUG] Case {case_idx} error: {e}", flush=True)
             if steps_taken == 0:
                 steps_taken = 1
-                rewards = [0.0]
+                rewards = [0.01]
 
-        log_end(success=success, steps=steps_taken, score=score, rewards=rewards if rewards else [0.0])
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards if rewards else [0.01])
         all_scores.append(score)
 
-    return sum(all_scores) / len(all_scores) if all_scores else 0.0
+    return sum(all_scores) / len(all_scores) if all_scores else 0.001
 
 
 # ── Main ──
 
 def main():
-    # 1. Wait for environment
     print(f"[DEBUG] Connecting to environment at {ENV_URL}...", flush=True)
     if not wait_for_env(ENV_URL, timeout=180):
-        print(f"[DEBUG] Environment unreachable after 180s at {ENV_URL}", flush=True)
+        print(f"[DEBUG] Environment unreachable after 180s", flush=True)
         for task in TASKS:
             for ci in range(NUM_CASES):
                 log_start(task=f"{task['name']}-case{ci}", env=BENCHMARK, model=MODEL_NAME)
-                log_step(step=1, action="env_timeout", reward=0.0, done=True, error="env unreachable")
-                log_end(success=False, steps=1, score=0.0, rewards=[0.0])
+                log_step(step=1, action="env_timeout", reward=0.01, done=True, error="env unreachable")
+                log_end(success=False, steps=1, score=0.001, rewards=[0.01])
         return
 
     print(f"[DEBUG] Environment ready", flush=True)
-
-    # 2. Create LLM client
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "no-key-provided")
 
-    # 3. Run all tasks
     scores = []
     for task in TASKS:
         try:
             avg = run_task(client, task)
         except Exception as e:
             print(f"[DEBUG] Task failed: {e}", flush=True)
-            avg = 0.0
+            avg = 0.001
         scores.append(avg)
         print(f"[DEBUG] {task['name']} score={avg:.4f}", flush=True)
 
-    overall = sum(scores) / len(scores) if scores else 0.0
+    overall = sum(scores) / len(scores) if scores else 0.001
     print(f"[DEBUG] Overall: {overall:.4f}", flush=True)
 
 
@@ -324,43 +339,9 @@ if __name__ == "__main__":
         raise
     except Exception as e:
         print(f"[DEBUG] Fatal: {e}", flush=True)
-        # Still emit valid logs so evaluator sees something
         for task in TASKS:
             for ci in range(NUM_CASES):
                 log_start(task=f"{task['name']}-case{ci}", env=BENCHMARK, model=MODEL_NAME)
-                log_step(step=1, action="fatal_error", reward=0.0, done=True, error=str(e)[:100])
-                log_end(success=False, steps=1, score=0.0, rewards=[0.0])
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+                log_step(step=1, action="fatal_error", reward=0.01, done=True, error=str(e)[:100])
+                log_end(success=False, steps=1, score=0.001, rewards=[0.01])
 

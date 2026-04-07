@@ -1,5 +1,4 @@
-"""
-Task definitions with case banks and graders for AE Triage OpenEnv.
+"""Task definitions with case banks and graders for AE Triage OpenEnv.
 3 tasks: Easy (Seriousness) → Medium (SUSAR) → Hard (Full Triage)
 Each grader returns 0.0–1.0 with partial credit.
 """
@@ -443,26 +442,7 @@ GRADERS = {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+def clamp_score(score: float) -> float:
+    """Clamp score to strictly between 0 and 1 (not 0.0, not 1.0)."""
+    return max(0.001, min(0.999, score))
 
